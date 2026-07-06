@@ -14,6 +14,8 @@ progress, cost footer, `/compact` feedback, and long-reply continuation.
 copilot-bridge/            # the Copilot ⇄ Feishu bridge (self-contained)
   copilot_stream.py        # streaming outbound bridge (events.jsonl + tmux pane → Feishu)
   copilot_keeper.py        # supervisor: keeps tmux session + stream poller alive
+  daemon_watchdog.py       # self-heal: detects daemon inbound-wedge (deadlock) via
+                           #   log signature, SIGUSR1 thread-dump + auto-restart (cron)
   copilot_env.sh           # cross-platform env (node path, token, allow-all)
   convert_intern.py        # convert a claude-type intern to a copilot-CLI intern
   claude_handoff.py        # extract a claude .jsonl transcript → HANDOFF markdown
@@ -37,6 +39,14 @@ intern-agent-cli/          # the intern-agent CLI this bridge plugs into
   streams to Feishu via `send → repeated update → finalize` on one message.
 - Feishu caps edits at ~17/message, so growth is a smooth ~1s cadence with
   automatic rollover to continuation messages for long replies.
+- **Inbound self-heal** (`daemon_watchdog.py`, run from cron every ~2 min): the
+  daemon's relay message handler can wedge on a rare pathological inbound message
+  (deadlock), silently killing Feishu→intern delivery while the CLI keeps running
+  and streaming out. The watchdog detects the signature (a trailing
+  `[RELAY_CLIENT] Feishu msg for …` log line with no follow-up `TMUX_SEND` for
+  >90 s), captures a `SIGUSR1` faulthandler thread-dump for root-cause, then
+  restarts the daemon with the correct env. It also restarts a dead daemon, and
+  self-discovers pid/log/script from the daemon's pidfile + `/proc`.
 
 Registered as a claude-type intern with `external_managed: true` so the daemon
 detects it as online (via a `copilot` child-process check) but never respawns a
