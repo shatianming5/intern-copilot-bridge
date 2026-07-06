@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Backups / temp
+*.bak
+*.bak.*
+*.orig
+*.tmp
+*.swp
+
+# Runtime state & secrets (NEVER commit)
+*.log
+.env
+.env.*
+**/enterprise_policy/
+**/.feishu_registry/
+**/.intern_sessions.json
+**/.copilot_token
+**/state/
+**/llm_intern_logs/
+**/*.offset
+**/*.state
+**/_owner.json
+**/policy.json
+**/user.env
+**/runtime/
+
+# OS
+.DS_Store

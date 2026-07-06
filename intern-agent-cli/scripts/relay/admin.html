@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Feishu Relay Admin</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; color: #333; padding: 20px; }
+  h1 { margin-bottom: 16px; font-size: 22px; }
+  h2 { margin: 18px 0 10px; font-size: 16px; }
+  .tabs { display: inline-flex; gap: 4px; background: #e8e8e8; padding: 4px; border-radius: 8px; margin-bottom: 14px; }
+  .tab { border: 0; background: transparent; color: #555; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; }
+  .tab.active { background: #fff; color: #222; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  .view.hidden { display: none; }
+  .summary { display: flex; gap: 16px; margin-bottom: 20px; }
+  .summary .card { background: #fff; border-radius: 8px; padding: 16px 24px; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+  .summary .card .label { font-size: 12px; color: #888; text-transform: uppercase; }
+  .summary .card .value { font-size: 28px; font-weight: 600; margin-top: 4px; }
+  .machine-card { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.1); margin-bottom: 16px; overflow: hidden; }
+  .machine-card.disconnected { opacity: 0.5; }
+  .machine-header { display: flex; justify-content: space-between; align-items: flex-start; padding: 14px 18px; border-bottom: 1px solid #eee; background: #fafafa; }
+  .machine-title { font-weight: 600; font-size: 15px; display: flex; align-items: center; gap: 10px; }
+  .machine-title .avatar { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; background: #eee; }
+  .machine-meta { display: flex; flex-wrap: wrap; gap: 12px 20px; font-size: 13px; color: #666; margin-top: 6px; }
+  .machine-meta span { display: inline-flex; align-items: center; gap: 4px; }
+  .machine-meta .label { color: #999; }
+  .warning-list { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+  .warning-badge { background: #fce8e8; color: #c0392b; border-radius: 4px; padding: 1px 6px; font-size: 12px; font-weight: 600; }
+  .owner-name { font-weight: 500; color: #333; }
+  .owner-name.unknown { color: #c0392b; font-style: italic; }
+  .project-section { padding: 10px 18px; border-bottom: 1px solid #f0f0f0; }
+  .project-section:last-child { border-bottom: none; }
+  .project-name { font-size: 13px; font-weight: 600; color: #555; margin-bottom: 8px; }
+  .intern-list { display: flex; flex-wrap: wrap; gap: 6px; }
+  .intern-chip { display: inline-flex; flex-direction: column; padding: 4px 10px; border-radius: 10px; font-size: 12px; background: #f3f3f3; }
+  .intern-chip.online { background: #e6f9ee; }
+  .intern-chip.offline { background: #fce8e8; }
+  .intern-chip .name-row { font-weight: 500; display: flex; gap: 6px; align-items: center; color: #222; }
+  .intern-chip .sub-row { font-size: 11px; color: #666; margin-top: 2px; }
+  .intern-chip .task-tag { color: #3370ff; }
+  .btn { padding: 6px 14px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; }
+  .btn-primary { background: #3370ff; color: #fff; }
+  .btn-primary:hover { background: #2558d6; }
+  .btn-primary:disabled { background: #b0c4ff; cursor: not-allowed; }
+  .transfer-status { font-size: 12px; color: #888; margin-top: 4px; }
+  .transfer-status.ready { color: #0a7c3e; }
+  .transfer-status.failed { color: #c0392b; }
+  .table-wrap { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.1); overflow: auto; margin-bottom: 16px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #eee; white-space: nowrap; }
+  th { background: #fafafa; color: #666; font-weight: 600; }
+  tr:last-child td { border-bottom: 0; }
+  .metric-ok { color: #0a7c3e; font-weight: 600; }
+  .metric-warn { color: #c0392b; font-weight: 600; }
+  #last-update { font-size: 12px; color: #aaa; margin-bottom: 12px; }
+  .mono { font-family: 'SF Mono', Monaco, Consolas, monospace; font-size: 12px; }
+  .actions { display: flex; align-items: center; gap: 8px; }
+</style>
+</head>
+<body>
+
+<h1>Feishu Relay Admin</h1>
+<div id="last-update"></div>
+<div class="tabs">
+  <button class="tab active" data-view="dashboard-view">Dashboard</button>
+  <button class="tab" data-view="analysis-view">Analysis</button>
+</div>
+<div id="dashboard-view" class="view">
+  <div class="summary" id="summary"></div>
+  <div id="machines"></div>
+</div>
+<div id="analysis-view" class="view hidden">
+  <h2>Load</h2>
+  <div class="summary" id="load-summary"></div>
+  <div id="daemon-load"></div>
+  <h2>Analysis</h2>
+  <div id="analysis-table"></div>
+</div>
+
+<script>
+const transferStates = {};
+
+async function fetchDashboard() {
+  const [dashboardResp, loadResp, analysisResp] = await Promise.all([
+    fetch('/api/admin/dashboard'),
+    fetch('/api/admin/load'),
+    fetch('/api/admin/analysis'),
+  ]);
+  const data = await dashboardResp.json();
+  const load = await loadResp.json();
+  const analysis = await analysisResp.json();
+  render(data.machines || data, data.relay_hash || '');
+  renderLoad(load);
+  renderAnalysis(analysis);
+  document.getElementById('last-update').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+}
+
+function render(data, relayHash) {
+  const machines = Object.entries(data);
+
+  // Summary
+  let totalInterns = 0, onlineInterns = 0, connectedMachines = 0, projectSet = new Set();
+  for (const [, m] of machines) {
+    if (m.ws_connected) connectedMachines++;
+    for (const [proj, interns] of Object.entries(m.projects || {})) {
+      projectSet.add(proj);
+      for (const i of interns) {
+        totalInterns++;
+        if (i.online) onlineInterns++;
+      }
+    }
+  }
+  document.getElementById('summary').innerHTML =
+    card('Machines', connectedMachines) +
+    card('Interns', totalInterns) +
+    card('Online', onlineInterns) +
+    card('Projects', projectSet.size) +
+    (relayHash ? card('Relay Hash', `<span class="mono">${relayHash}</span>`) : '');
+
+  // Machine cards
+  const container = document.getElementById('machines');
+  container.innerHTML = '';
+
+  for (const [mid, m] of machines) {
+    const div = document.createElement('div');
+    div.className = 'machine-card' + (m.ws_connected ? '' : ' disconnected');
+
+    // Header
+    const header = document.createElement('div');
+    header.className = 'machine-header';
+
+    const left = document.createElement('div');
+    const title = document.createElement('div');
+    title.className = 'machine-title';
+    if (m.owner_avatar) {
+      const img = document.createElement('img');
+      img.className = 'avatar';
+      img.src = m.owner_avatar;
+      img.alt = m.owner_name || 'owner';
+      title.appendChild(img);
+    }
+    const titleText = document.createElement('span');
+    titleText.textContent = mid;
+    title.appendChild(titleText);
+    left.appendChild(title);
+
+    const ownerDisplay = m.owner_name
+      ? `<span class="owner-name">${escapeHtml(m.owner_name)}</span>${m.owner_mobile ? ` <span class="mono">(${escapeHtml(m.owner_mobile)})</span>` : ''}`
+      : (m.owner_mobile ? `<span class="mono">${escapeHtml(m.owner_mobile)}</span>` : `<span class="owner-name unknown">unknown</span>`);
+    const ownerTip = m.owner_open_id ? ` title="open_id: ${escapeHtml(m.owner_open_id)}"` : '';
+    const cliParts = [];
+    const cliv = m.cli_versions || {};
+    if (cliv.claude) cliParts.push('claude ' + shortVer(cliv.claude));
+    if (cliv.codex) cliParts.push('codex ' + shortVer(cliv.codex));
+    if (cliv.python) cliParts.push('py ' + cliv.python);
+    const loadStr = (m.resources && Array.isArray(m.resources.loadavg))
+      ? m.resources.loadavg.map(v => v.toFixed(2)).join(' ') : '-';
+    const diskStr = (m.resources && m.resources.disk_free_gb != null)
+      ? m.resources.disk_free_gb + ' GB' : '-';
+    const warningHtml = renderWarnings(m.warnings || []);
+    const peerMetrics = ((m.metrics || {}).peer_delivery || {});
+    const runtimeMetrics = ((m.metrics || {}).runtime || {});
+    const runtimeCalls = (runtimeMetrics.interfaces || []).reduce((sum, row) => sum + (row.count || 0), 0);
+
+    const meta = document.createElement('div');
+    meta.className = 'machine-meta';
+    meta.innerHTML =
+      `<span${ownerTip}><span class="label">Owner:</span> ${ownerDisplay}</span>` +
+      `<span><span class="label">IP:</span> <span class="mono">${m.ip || '-'}</span></span>` +
+      `<span><span class="label">SSH:</span> <span class="mono">${m.ssh_port || 22}</span></span>` +
+      `<span><span class="label">Ext:</span> <span class="mono">${m.extension_version || '-'}</span></span>` +
+      `<span><span class="label">Hooks:</span> <span class="mono">${m.hooks_version || '-'}</span></span>` +
+      `<span><span class="label">Daemon:</span> <span class="mono">${m.daemon_hash || '-'}</span></span>` +
+      (cliParts.length ? `<span><span class="label">CLI:</span> <span class="mono">${cliParts.join(' · ')}</span></span>` : '') +
+      `<span><span class="label">告警:</span> ${warningHtml}</span>` +
+      `<span><span class="label">Load:</span> <span class="mono">${loadStr}</span></span>` +
+      `<span><span class="label">Disk:</span> <span class="mono">${diskStr}</span></span>` +
+      `<span><span class="label">PeerQ:</span> <span class="mono">${peerMetrics.total_jobs || 0}/${peerMetrics.max_target_depth || 0}</span></span>` +
+      `<span><span class="label">Calls:</span> <span class="mono">${runtimeCalls}</span></span>` +
+      `<span><span class="label">Connected:</span> ${formatTime(m.connected_at)}</span>`;
+    left.appendChild(meta);
+    header.appendChild(left);
+
+    // Actions (right side)
+    const actionsDiv = document.createElement('div');
+    actionsDiv.className = 'actions';
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-primary';
+    btn.textContent = 'Transfer Logs';
+    btn.disabled = !m.ws_connected;
+    btn.onclick = () => requestLogs(mid, btn);
+    actionsDiv.appendChild(btn);
+    const statusDiv = document.createElement('div');
+    statusDiv.className = 'transfer-status';
+    statusDiv.id = 'transfer-' + mid;
+    if (transferStates[mid]) updateTransferDisplay(statusDiv, transferStates[mid]);
+    actionsDiv.appendChild(statusDiv);
+    header.appendChild(actionsDiv);
+
+    div.appendChild(header);
+
+    // Projects
+    const projects = m.projects || {};
+    const sortedProjects = Object.keys(projects).sort();
+    for (const proj of sortedProjects) {
+      const section = document.createElement('div');
+      section.className = 'project-section';
+      const projTitle = document.createElement('div');
+      projTitle.className = 'project-name';
+      projTitle.textContent = proj;
+      section.appendChild(projTitle);
+
+      const internDiv = document.createElement('div');
+      internDiv.className = 'intern-list';
+      for (const i of projects[proj]) {
+        const chip = document.createElement('div');
+        chip.className = 'intern-chip ' + (i.online ? 'online' : 'offline');
+
+        const nameRow = document.createElement('div');
+        nameRow.className = 'name-row';
+        const typeBadge = i.type === 'claude' ? ' [C]' : i.type === 'codex' ? ' [X]' : '';
+        nameRow.textContent = i.name + typeBadge;
+        chip.appendChild(nameRow);
+
+        const subParts = [];
+        if (i.status) subParts.push(`<span>${escapeHtml(i.status)}</span>`);
+        if (i.current_task) subParts.push(`<span class="task-tag">${escapeHtml(i.current_task)}</span>`);
+        const laRel = relTime(i.last_active);
+        if (laRel) subParts.push(`<span title="${escapeHtml(i.last_active || '')}">${laRel}</span>`);
+        if (subParts.length) {
+          const subRow = document.createElement('div');
+          subRow.className = 'sub-row';
+          subRow.innerHTML = subParts.join(' · ');
+          chip.appendChild(subRow);
+        }
+        chip.title = `type: ${i.type}`;
+        internDiv.appendChild(chip);
+      }
+      section.appendChild(internDiv);
+      div.appendChild(section);
+    }
+
+    container.appendChild(div);
+  }
+}
+
+function renderLoad(load) {
+  const summary = load.summary || {};
+  document.getElementById('load-summary').innerHTML =
+    card('Relay Threads', summary.relay_threads || 0) +
+    card('Machines', `${summary.machines_connected || 0}/${summary.machines || 0}`) +
+    card('Peer Jobs', summary.daemon_peer_jobs || 0) +
+    card('Max Peer Depth', summary.daemon_max_peer_target_depth || 0);
+
+  const daemons = Object.entries(load.daemons || {});
+  const rows = daemons.map(([mid, item]) => {
+    const resources = item.resources || {};
+    const loadStr = Array.isArray(resources.loadavg) ? resources.loadavg.map(v => Number(v).toFixed(2)).join(' ') : '-';
+    const peer = ((item.metrics || {}).peer_delivery || {});
+    const runtime = ((item.metrics || {}).runtime || {});
+    const calls = (runtime.interfaces || []).reduce((sum, row) => sum + (row.count || 0), 0);
+    const err = (runtime.interfaces || []).reduce((sum, row) => sum + (row.error_count || 0), 0);
+    return `<tr>` +
+      `<td class="mono">${escapeHtml(mid)}</td>` +
+      `<td>${item.ws_connected ? '<span class="metric-ok">online</span>' : '<span class="metric-warn">offline</span>'}</td>` +
+      `<td class="mono">${escapeHtml(loadStr)}</td>` +
+      `<td class="mono">${peer.total_jobs || 0}</td>` +
+      `<td class="mono">${peer.active_targets || 0}</td>` +
+      `<td class="mono">${peer.max_target_depth || 0}</td>` +
+      `<td class="mono">${calls}</td>` +
+      `<td class="mono">${err}</td>` +
+      `<td>${formatTime(item.metrics_updated_at)}</td>` +
+      `</tr>`;
+  }).join('');
+  document.getElementById('daemon-load').innerHTML =
+    `<div class="table-wrap"><table>` +
+    `<thead><tr><th>Machine</th><th>WS</th><th>Load</th><th>Peer Jobs</th><th>Active Targets</th><th>Max Depth</th><th>Calls</th><th>Errors</th><th>Metrics At</th></tr></thead>` +
+    `<tbody>${rows || '<tr><td colspan="9">No daemon metrics</td></tr>'}</tbody>` +
+    `</table></div>`;
+}
+
+function renderAnalysis(analysis) {
+  const rows = (analysis.interfaces || []).slice(0, 100).map(row => {
+    const errorClass = row.error_count ? 'metric-warn' : 'metric-ok';
+    return `<tr>` +
+      `<td>${escapeHtml(row.source || '')}</td>` +
+      `<td class="mono">${escapeHtml(row.machine_id || '')}</td>` +
+      `<td class="mono">${escapeHtml(row.key || '')}</td>` +
+      `<td class="mono">${row.count || 0}</td>` +
+      `<td class="mono ${errorClass}">${row.error_count || 0}</td>` +
+      `<td class="mono">${row.avg_ms || 0}</td>` +
+      `<td class="mono">${row.p95_ms || 0}</td>` +
+      `<td class="mono">${row.max_ms || 0}</td>` +
+      `<td>${formatTime(row.last_at)}</td>` +
+      `</tr>`;
+  }).join('');
+  document.getElementById('analysis-table').innerHTML =
+    `<div class="table-wrap"><table>` +
+    `<thead><tr><th>Source</th><th>Machine</th><th>Interface</th><th>Count</th><th>Errors</th><th>Avg ms</th><th>P95 ms</th><th>Max ms</th><th>Last</th></tr></thead>` +
+    `<tbody>${rows || '<tr><td colspan="9">No interface metrics</td></tr>'}</tbody>` +
+    `</table></div>`;
+}
+
+function card(label, value) {
+  return `<div class="card"><div class="label">${label}</div><div class="value">${value}</div></div>`;
+}
+
+function formatTime(iso) {
+  if (!iso) return '-';
+  const d = new Date(iso);
+  return d.toLocaleString();
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function renderWarnings(warnings) {
+  if (!Array.isArray(warnings) || warnings.length === 0) return '-';
+  const badges = warnings.map(w => {
+    const code = escapeHtml(w.code || 'unknown');
+    const parts = [];
+    if (w.detail) parts.push(w.detail);
+    if (w.since) parts.push('since: ' + w.since);
+    const title = escapeHtml(parts.join('\n'));
+    return `<span class="warning-badge" title="${title}">${code}</span>`;
+  });
+  return `<span class="warning-list">${badges.join('')}</span>`;
+}
+
+function shortVer(s) {
+  if (!s) return '';
+  const m = String(s).match(/\d+(?:\.\d+){1,2}/);
+  return m ? m[0] : String(s).slice(0, 16);
+}
+
+function relTime(iso) {
+  if (!iso) return '';
+  const t = new Date(iso).getTime();
+  if (!t) return '';
+  const sec = Math.floor((Date.now() - t) / 1000);
+  if (sec < 60) return sec + 's ago';
+  if (sec < 3600) return Math.floor(sec / 60) + 'm ago';
+  if (sec < 86400) return Math.floor(sec / 3600) + 'h ago';
+  return Math.floor(sec / 86400) + 'd ago';
+}
+
+async function requestLogs(machineId, btn) {
+  btn.disabled = true;
+  btn.textContent = 'Requesting...';
+  const statusDiv = document.getElementById('transfer-' + machineId);
+
+  const resp = await fetch('/api/admin/request_logs', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({machine_id: machineId}),
+  });
+  const result = await resp.json();
+
+  if (!resp.ok) {
+    btn.disabled = false;
+    btn.textContent = 'Transfer Logs';
+    statusDiv.className = 'transfer-status failed';
+    statusDiv.textContent = 'Failed: ' + (result.error || 'unknown');
+    return;
+  }
+
+  const requestId = result.request_id;
+  transferStates[machineId] = {status: 'pending', request_id: requestId};
+  statusDiv.textContent = 'Transferring...';
+  pollLogStatus(machineId, requestId, btn, statusDiv);
+}
+
+async function pollLogStatus(machineId, requestId, btn, statusDiv) {
+  const resp = await fetch('/api/admin/log_status?request_id=' + requestId);
+  const result = await resp.json();
+
+  transferStates[machineId] = result;
+  updateTransferDisplay(statusDiv, result);
+
+  if (result.status === 'pending' || result.status === 'uploading') {
+    setTimeout(() => pollLogStatus(machineId, requestId, btn, statusDiv), 2000);
+  } else {
+    btn.disabled = false;
+    btn.textContent = 'Transfer Logs';
+  }
+}
+
+function updateTransferDisplay(el, info) {
+  if (info.status === 'ready') {
+    el.className = 'transfer-status ready';
+    el.textContent = 'Saved: ' + info.local_path;
+  } else if (info.status === 'failed') {
+    el.className = 'transfer-status failed';
+    el.textContent = 'Failed';
+  } else {
+    el.className = 'transfer-status';
+    el.textContent = info.status === 'uploading' ? 'Uploading...' : 'Pending...';
+  }
+}
+
+document.querySelectorAll('.tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(item => item.classList.remove('active'));
+    document.querySelectorAll('.view').forEach(item => item.classList.add('hidden'));
+    btn.classList.add('active');
+    document.getElementById(btn.dataset.view).classList.remove('hidden');
+  });
+});
+
+fetchDashboard();
+setInterval(fetchDashboard, 10000);
+</script>
+
+</body>
+</html>

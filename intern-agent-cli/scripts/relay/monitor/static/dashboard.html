@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Intern Monitor</title>
+    <link rel="stylesheet" href="/monitor/static/styles.css?v=20260513-t250-v4">
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="title-block">
+        <h1>Intern Monitor</h1>
+      </div>
+
+      <section class="controls" aria-label="Dashboard filters">
+        <label class="field">
+          <span>Search</span>
+          <input
+            id="machine-filter"
+            type="search"
+            autocomplete="off"
+            placeholder="ip / label / owner，多个用空格分隔"
+            aria-label="Search machine list by IP, label, or owner (space-separated for multiple terms)">
+        </label>
+
+        <label class="field">
+          <span>Project</span>
+          <select id="project-filter" aria-label="Filter by project">
+            <option value="__all__">All projects</option>
+          </select>
+        </label>
+
+        <label class="switch">
+          <input id="label-toggle" type="checkbox">
+          <span class="switch-track" aria-hidden="true"></span>
+          <span>Show labels</span>
+        </label>
+
+        <label class="switch">
+          <input id="show-dead-toggle" type="checkbox">
+          <span class="switch-track" aria-hidden="true"></span>
+          <span>Show dead</span>
+        </label>
+
+        <details id="machine-selector" class="machine-selector">
+          <summary>
+            <span>Machines</span>
+            <strong id="machine-selection-summary">Loading machines</strong>
+          </summary>
+          <div class="machine-selector-body">
+            <label class="machine-choice machine-choice-all">
+              <input id="machine-select-all" type="checkbox" checked>
+              <span class="machine-choice-text">
+                <span class="machine-choice-name">All machines</span>
+              </span>
+            </label>
+            <div id="machine-options" class="machine-options" role="group" aria-label="Visible machines"></div>
+          </div>
+        </details>
+      </section>
+    </header>
+
+    <main class="dashboard" aria-label="Intern monitor dashboard">
+      <section class="summary-strip" aria-live="polite">
+        <span id="summary">Loading snapshot...</span>
+        <span id="generated-at"></span>
+      </section>
+
+      <section id="machine-map" class="machine-map" aria-live="polite"></section>
+    </main>
+
+    <noscript>
+      <p class="load-error">JavaScript is required to render the intern monitor.</p>
+    </noscript>
+
+    <script src="/monitor/static/app.js?v=20260513-t250-v4" defer></script>
+  </body>
+</html>
