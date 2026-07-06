@@ -8,6 +8,9 @@ This lets you drive a Copilot-CLI session from a Feishu chat: send it messages,
 watch its replies stream back token-by-token with rich formatting, tool
 progress, cost footer, `/compact` feedback, and long-reply continuation.
 
+> 📖 **New here? Read [`docs/OVERVIEW.md`](docs/OVERVIEW.md)** — a friendly
+> end-to-end tour of the whole system with ASCII diagrams.
+
 ## Layout
 
 ```
