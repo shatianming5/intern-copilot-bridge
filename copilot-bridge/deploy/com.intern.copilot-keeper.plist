@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.intern.copilot-keeper</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>/Users/tommy/work-agents/copilot_keeper.py</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>INTERN_OWNER_MOBILE</key>
+    <string>YOUR_FEISHU_OWNER_MOBILE</string>
+    <key>HOME</key>
+    <string>/Users/tommy</string>
+  </dict>
+  <key>WorkingDirectory</key>
+  <string>/Users/tommy/work-agents</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/tmp/copilot-keeper.out</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/copilot-keeper.err</string>
+</dict>
+</plist>

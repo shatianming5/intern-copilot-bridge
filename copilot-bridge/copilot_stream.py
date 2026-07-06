@@ -78,16 +78,23 @@ def _creds():
     return f.get("app_id", ""), f.get("app_secret", "")
 
 
-def token():
+def token(force=False):
     now = time.time()
-    if _tok_cache["token"] and now < _tok_cache["exp"] - 300:
+    if not force and _tok_cache["token"] and now < _tok_cache["exp"] - 300:
         return _tok_cache["token"]
     aid, sec = _creds()
     t = fa.get_tenant_token(aid, sec)
     if t:
         _tok_cache["token"] = t
-        _tok_cache["exp"] = now + 6600
+        _tok_cache["exp"] = now + 5400  # refresh well before Feishu's ~7200s TTL
     return t
+
+
+_INVALID_TOKEN_CODES = ("99991663", "99991661", "99991664", "Invalid access token")
+
+
+def _is_token_err(err):
+    return err and any(c in str(err) for c in _INVALID_TOKEN_CODES)
 
 
 def chat_id():
@@ -329,6 +336,11 @@ def send_new(chat, text):
     if not t:
         return None
     mid, err = fa.send_message(t, chat, text)
+    if _is_token_err(err):                       # stale token -> force refresh + retry once
+        log("send: invalid token, refreshing")
+        t = token(force=True)
+        if t:
+            mid, err = fa.send_message(t, chat, text)
     if err:
         log(f"send err: {err}")
     return mid
@@ -338,7 +350,13 @@ def edit(mid, text):
     t = token()
     if not t:
         return False, "no token"
-    return fa.update_message(t, mid, text)
+    ok, err = fa.update_message(t, mid, text)
+    if _is_token_err(err):                        # stale token -> force refresh + retry once
+        log("edit: invalid token, refreshing")
+        t = token(force=True)
+        if t:
+            ok, err = fa.update_message(t, mid, text)
+    return ok, err
 
 
 # compaction feedback state (a real /compact takes ~30-40s; show progress)
