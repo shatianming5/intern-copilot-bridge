@@ -207,7 +207,11 @@ def pane_busy():
         return None
     for ln in r.stdout.splitlines():
         s = ln.strip()
-        if "esc cancel" in s and ("Working" in s or "B esc" in s or "KiB esc" in s):
+        # copilot spinner: "◉ Working · 108 B esc interrupt" or "○ Working esc
+        # interrupt" (older builds said "esc cancel"). Match on Working + an esc
+        # hint so a CLI wording change (cancel->interrupt) can't wedge finalize.
+        if "Working" in s and ("esc cancel" in s or "esc interrupt" in s
+                               or "B esc" in s or "KiB esc" in s):
             return True
         if "Compacting" in s:          # compaction is active work, keep turn open
             return True
@@ -243,7 +247,8 @@ def pane_tail():
     end = len(lines)
     for i in range(len(lines) - 1, -1, -1):
         s = lines[i].strip()
-        if ("Working ·" in s and "esc cancel" in s) or s.startswith("❯") or \
+        if ("Working" in s and ("esc cancel" in s or "esc interrupt" in s)) or \
+           s.startswith("❯") or \
            ("Session:" in s and "AIC" in s) or set(s) <= set("─"):
             end = i
         elif s:
