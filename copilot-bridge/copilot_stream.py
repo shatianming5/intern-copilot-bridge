@@ -324,6 +324,7 @@ class Turn:
         self.idle_since = 0.0      # when the pane first went idle this turn
         self.produced = False      # got >=1 assistant.message/tool (finalize gate)
         self.stale_tail = ""       # pane content at turn open (suppress until it changes)
+        self.started_at = time.time()   # turn open time (for the thinking indicator)
 
 
 # background-command poll tools whose segment text carries no information (the
@@ -340,6 +341,32 @@ def _is_poll_noise(turn):
     if not segs:
         return True
     return all(any(p in s for p in _POLL_TOOLS) for s in segs)
+
+
+# internal auto-continue prompts copilot/daemon inject on resume or after a
+# context compaction — these are NOT real user messages and must not be echoed
+# as a "🧑 用户:" header (which also splits the turn into an empty message).
+_INTERNAL_PROMPTS = (
+    "please continue from where you left off",
+    "continue from where you left off",
+    "please continue",
+)
+
+
+def _is_internal_prompt(text):
+    t = (text or "").strip().lower().strip(".。 ")
+    return any(t == p or t.startswith(p) for p in _INTERNAL_PROMPTS)
+
+
+def _think_label(el):
+    """Coarse 'still thinking' label (changes <=~1/min to spare the edit cap)."""
+    if el < 12:
+        return ""
+    if el < 30:
+        return "🤔 深度思考中…（十几秒）"
+    if el < 60:
+        return "🤔 深度思考中…（约半分钟）"
+    return f"🤔 深度思考中…（约 {el // 60} 分钟）"
 
 
 def _persist(turn):
@@ -532,6 +559,13 @@ def main():
                 turn.live_tail = pt or ""
             else:
                 turn.live_tail = ""
+            # thinking indicator: pane is busy (e.g. reasoningEffort=max can think
+            # for many minutes) but nothing has streamed/committed yet -> show a
+            # coarse elapsed note so the message never looks frozen/empty. Coarse
+            # buckets keep it to <=~1 edit/min (well under the Feishu edit cap).
+            if (not turn.done and not turn.produced and not turn.live_tail
+                    and pane_busy() is True):
+                turn.live_tail = _think_label(int(time.time() - turn.started_at))
             # #2 refresh AIC cost from pane footer
             if not turn.done:
                 aic = pane_aic()
@@ -572,11 +606,14 @@ def _handle(e, turn, chat, flush, finalize):
         turn.last_activity = time.time()
 
     if t == "user.message":
+        prompt = (d.get("content") or "").strip()
+        # internal auto-continue (resume / post-compaction) — not a real user
+        # message; don't echo a header or split the current turn into an empty msg.
+        if _is_internal_prompt(prompt):
+            return
         # #3 open immediately with echoed prompt + divider + spinner
         if not turn.done:
             finalize()
-        prompt = (d.get("content") or "").strip()
-        # skip our own injected system/handoff style prompts? show as user
         turn.__init__()
         turn.header = f"🧑 用户: {prompt}\n---" if prompt else ""
         turn.done = False
