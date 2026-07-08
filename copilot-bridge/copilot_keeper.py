@@ -49,6 +49,33 @@ def tmux_alive(name):
     return run(["tmux", "has-session", "-t", name]).returncode == 0
 
 
+def tmux_has_correct_sid(name, sid):
+    """True if the tmux session's wrapper is resuming the EXPECTED sid.
+
+    Guards against a malformed/stale session (e.g. `copilot --allow-all` with no
+    --resume, or resuming a wrong sid) that tmux_alive would wrongly accept,
+    leaving the intern stuck in a detached context forever. Inspects the pane's
+    command chain for `--resume=<sid>`.
+    """
+    r = run(["tmux", "list-panes", "-t", name, "-F", "#{pane_pid}"])
+    pane_pid = (r.stdout.strip().splitlines() or [""])[0]
+    if not pane_pid:
+        return False
+    # walk pane_pid + its descendants, look for --resume=<sid> in any cmdline
+    seen = run(["pgrep", "-P", pane_pid]).stdout.split() + [pane_pid]
+    for pid in seen:
+        cl = run(["ps", "-o", "args=", "-p", pid]).stdout
+        if f"--resume={sid}" in cl:
+            return True
+    # also check the wrapper (pane_pid) cmdline directly
+    wrapper = run(["ps", "-o", "args=", "-p", pane_pid]).stdout
+    return f"--resume={sid}" in wrapper
+
+
+def kill_tmux(name):
+    run(["tmux", "kill-session", "-t", name])
+
+
 def start_tmux(itn):
     sid, cwd, name = itn["sid"], itn["cwd"], itn["tmux"]
     loop = (
@@ -98,6 +125,13 @@ def main():
                 if not itn.get("sid"):
                     continue
                 if not tmux_alive(itn["tmux"]):
+                    start_tmux(itn)
+                    time.sleep(10)
+                elif not tmux_has_correct_sid(itn["tmux"], itn["sid"]):
+                    # tmux exists but is resuming the wrong/no sid -> rebuild it
+                    log(f"tmux {itn['tmux']} has wrong sid (expected {itn['sid']}); rebuilding")
+                    kill_tmux(itn["tmux"])
+                    time.sleep(2)
                     start_tmux(itn)
                     time.sleep(10)
                 if not poller_alive(itn["name"]):
