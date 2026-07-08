@@ -326,6 +326,22 @@ class Turn:
         self.stale_tail = ""       # pane content at turn open (suppress until it changes)
 
 
+# background-command poll tools whose segment text carries no information (the
+# actual output goes to the model, not the ⎿ line). A headerless, prose-less
+# turn made only of these is pure noise — one bare "⎿ Read shell output" per
+# poll — so it is suppressed until the turn produces real prose / a user header.
+_POLL_TOOLS = ("Read shell output",)
+
+
+def _is_poll_noise(turn):
+    if turn.header or turn.last_prose:
+        return False
+    segs = [s for s in turn.segments[turn.msg_base:] if s.strip()]
+    if not segs:
+        return True
+    return all(any(p in s for p in _POLL_TOOLS) for s in segs)
+
+
 def _persist(turn):
     try:
         json.dump({"msg_id": turn.msg_id, "header": turn.header,
@@ -442,6 +458,8 @@ def main():
                 log(f"rollover -> new msg {mid}")
             return
         if turn.msg_id is None:
+            if _is_poll_noise(turn):
+                return          # bare background-poll fragment -> no Feishu message
             mid = send_new(chat, text)
             if mid:
                 turn.msg_id = mid
