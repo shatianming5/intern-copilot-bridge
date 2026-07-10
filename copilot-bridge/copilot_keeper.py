@@ -216,18 +216,32 @@ def kill_tmux(name):
     run(["tmux", "kill-session", "-t", name])
 
 
+def _model_flags(itn):
+    """Optional per-intern model flags from config: model / effort / context."""
+    flags = []
+    if itn.get("model"):
+        flags += ["--model", str(itn["model"])]
+    if itn.get("effort"):
+        flags += ["--effort", str(itn["effort"])]
+    if itn.get("context"):
+        flags += ["--context", str(itn["context"])]
+    return " ".join(flags)
+
+
 def start_tmux(itn):
     sid, cwd, name = itn["sid"], itn["cwd"], itn["tmux"]
+    mflags = _model_flags(itn)
+    mpart = f" {mflags}" if mflags else ""
     loop = (
         f'source {ENV_SH}; '
         f'while true; do '
-        f'copilot --resume={sid} --allow-all; '
+        f'copilot --resume={sid} --allow-all{mpart}; '
         f'echo "[keeper] copilot exited $(date), resuming in 3s"; sleep 3; '
         f'done'
     )
     run(["tmux", "new-session", "-d", "-s", name, "-x", "220", "-y", "50", "-c", cwd,
          "bash", "-lc", loop])
-    log(f"(re)created tmux {name} resume={sid}")
+    log(f"(re)created tmux {name} resume={sid}{mpart}")
 
 
 def poller_alive(name):
