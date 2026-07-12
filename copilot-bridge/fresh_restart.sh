@@ -36,6 +36,11 @@ REG_CWD=$(pyget cwd)
 TREE="${REG_CWD:-$WS_CWD}"
 LAUNCH="${WS_CWD:-$REG_CWD}"
 TMUX_S=$(pyget tmux)
+MODEL=$(pyget model); EFFORT=$(pyget effort); CONTEXT=$(pyget context)
+MODEL_FLAGS=""
+[ -n "$MODEL" ] && MODEL_FLAGS="$MODEL_FLAGS --model $MODEL"
+[ -n "$EFFORT" ] && MODEL_FLAGS="$MODEL_FLAGS --effort $EFFORT"
+[ -n "$CONTEXT" ] && MODEL_FLAGS="$MODEL_FLAGS --context $CONTEXT"
 [ -z "$TREE" ] && { echo "ERR: no cwd for $NAME"; exit 1; }
 [ -d "$LAUNCH" ] || { echo "ERR: launch cwd missing: $LAUNCH"; exit 1; }
 echo "intern=$NAME old=${OLD_SID:0:8} project=$PROJECT tree=$TREE launch=$LAUNCH tmux=$TMUX_S"
@@ -110,7 +115,7 @@ echo "creating fresh session (copilot -p, up to 180s)..."
 if command -v timeout >/dev/null 2>&1; then TO="timeout 180";
 elif command -v gtimeout >/dev/null 2>&1; then TO="gtimeout 180";
 else TO=""; fi
-$TO copilot -p "$ORIENT" --allow-all >"/tmp/fresh_${NAME}.out" 2>&1
+$TO copilot -p "$ORIENT" --allow-all $MODEL_FLAGS >"/tmp/fresh_${NAME}.out" 2>&1
 rc=$?
 after=$(ls -d "$SS"/*/ 2>/dev/null | xargs -n1 basename 2>/dev/null | sort)
 NEW_SID=$(comm -13 <(printf '%s\n' "$before") <(printf '%s\n' "$after") | grep -E '^[0-9a-f-]{36}$' | head -1)
